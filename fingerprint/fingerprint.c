@@ -27,22 +27,19 @@
  */
 #define LOG_TAG "FingerprintHal"
 
-#include <cutils/log.h>
-#include <hardware/hardware.h>
-#include <hardware/fingerprint.h>
-#include <system/qemu_pipe.h>
-
 #include <errno.h>
 #include <endian.h>
 #include <inttypes.h>
 #include <malloc.h>
-#include <poll.h>
-#include <stdbool.h>
-#include <stdlib.h>
 #include <string.h>
+#include <cutils/log.h>
+#include <hardware/hardware.h>
+#include <hardware/fingerprint.h>
+#include "qemud.h"
 
+#include <poll.h>
 
-#define FINGERPRINT_LISTEN_SERVICE_NAME "pipe:qemud:fingerprintlisten"
+#define FINGERPRINT_LISTEN_SERVICE_NAME "fingerprintlisten"
 #define FINGERPRINT_FILENAME "emufp.bin"
 #define AUTHENTICATOR_ID_FILENAME "emuauthid.bin"
 #define MAX_COMM_CHARS 128
@@ -311,11 +308,15 @@ static int fingerprint_enroll(struct fingerprint_device *device,
         const hw_auth_token_t *hat,
         uint32_t __unused gid,
         uint32_t __unused timeout_sec) {
+    fingerprint_msg_t msg = {0, {0}};
+    msg.type = FINGERPRINT_ERROR;
+    msg.data.error = FINGERPRINT_ERROR_UNABLE_TO_PROCESS;
     ALOGD("fingerprint_enroll");
     qemu_fingerprint_device_t* dev = (qemu_fingerprint_device_t*)device;
     if (!hat) {
         ALOGW("%s: null auth token", __func__);
-        return -EPROTONOSUPPORT;
+        dev->device.notify(&msg);
+        return 0;
     }
     if (hat->challenge == dev->challenge) {
         // The secure_user_id retrieved from the auth token should be stored
@@ -327,10 +328,12 @@ static int fingerprint_enroll(struct fingerprint_device *device,
     }
 
     if (hat->version != HW_AUTH_TOKEN_VERSION) {
-        return -EPROTONOSUPPORT;
+        dev->device.notify(&msg);
+        return 0;
     }
     if (hat->challenge != dev->challenge && !(hat->authenticator_type & HW_AUTH_FINGERPRINT)) {
-        return -EPERM;
+        dev->device.notify(&msg);
+        return 0;
     }
 
     dev->user_id = hat->user_id;
@@ -420,13 +423,21 @@ static int fingerprint_enumerate(struct fingerprint_device *device) {
     fingerprint_msg_t message = {0, {0}};
     message.type = FINGERPRINT_TEMPLATE_ENUMERATING;
     message.data.enumerated.finger.gid = qdev->group_id;
-    for (int i = 0; i < MAX_NUM_FINGERS; i++) {
-        if (qdev->listener.secureid[i] != 0 ||
-            qdev->listener.fingerid[i] != 0) {
-            template_count--;
-            message.data.enumerated.remaining_templates = template_count;
-            message.data.enumerated.finger.fid = qdev->listener.fingerid[i];
-            qdev->device.notify(&message);
+
+    if(template_count == 0) {
+        message.data.enumerated.remaining_templates = 0;
+        message.data.enumerated.finger.fid = 0;
+        qdev->device.notify(&message);
+    }
+    else {
+        for (int i = 0; i < MAX_NUM_FINGERS; i++) {
+            if (qdev->listener.secureid[i] != 0 ||
+                qdev->listener.fingerid[i] != 0) {
+                template_count--;
+                message.data.enumerated.remaining_templates = template_count;
+                message.data.enumerated.finger.fid = qdev->listener.fingerid[i];
+                qdev->device.notify(&message);
+            }
         }
     }
 
@@ -442,7 +453,7 @@ static int fingerprint_remove(struct fingerprint_device *device,
         ALOGE("Can't remove fingerprint (gid=%d, fid=%d); "
               "device not initialized properly",
               gid, fid);
-        return -1;
+        return -ENODEV;
     }
 
     qemu_fingerprint_device_t* qdev = (qemu_fingerprint_device_t*)device;
@@ -467,6 +478,7 @@ static int fingerprint_remove(struct fingerprint_device *device,
                     pthread_mutex_unlock(&qdev->lock);
                     msg.type = FINGERPRINT_TEMPLATE_REMOVED;
                     msg.data.removed.finger.fid = theFid;
+                    msg.data.removed.finger.gid = qdev->group_id;
                     device->notify(&msg);
 
                     // Because we released the mutex, the list
@@ -477,11 +489,12 @@ static int fingerprint_remove(struct fingerprint_device *device,
                 }
             }  // end for (idx < MAX_NUM_FINGERS)
         } while (!listIsEmpty);
-        msg.type = FINGERPRINT_TEMPLATE_REMOVED;
-        msg.data.removed.finger.fid = 0;
-        device->notify(&msg);
         qdev->listener.state = STATE_IDLE;
         pthread_mutex_unlock(&qdev->lock);
+        msg.type = FINGERPRINT_TEMPLATE_REMOVED;
+        msg.data.removed.finger.fid = 0;
+        msg.data.removed.finger.gid = qdev->group_id;
+        device->notify(&msg);
     } else {
         // Delete one fingerprint
         // Look for this finger ID in our table.
@@ -497,7 +510,15 @@ static int fingerprint_remove(struct fingerprint_device *device,
             qdev->listener.state = STATE_IDLE;
             pthread_mutex_unlock(&qdev->lock);
             ALOGE("Fingerprint ID %d not found", fid);
-            return FINGERPRINT_ERROR;
+            //msg.type = FINGERPRINT_ERROR;
+            //msg.data.error = FINGERPRINT_ERROR_UNABLE_TO_REMOVE;
+            //device->notify(&msg);
+            msg.type = FINGERPRINT_TEMPLATE_REMOVED;
+            msg.data.removed.finger.fid = 0;
+            msg.data.removed.finger.gid = qdev->group_id;
+            msg.data.removed.remaining_templates = 0;
+            device->notify(&msg);
+            return 0;
         }
 
         qdev->listener.secureid[idx] = 0;
@@ -661,8 +682,9 @@ static void* listenerFunction(void* data) {
     ALOGD("----------------> %s ----------------->", __FUNCTION__);
     qemu_fingerprint_device_t* qdev = (qemu_fingerprint_device_t*)data;
 
+    int fd = qemud_channel_open(FINGERPRINT_LISTEN_SERVICE_NAME);
     pthread_mutex_lock(&qdev->lock);
-    qdev->qchanfd = qemu_pipe_open(FINGERPRINT_LISTEN_SERVICE_NAME);
+    qdev->qchanfd = fd;
     if (qdev->qchanfd < 0) {
         ALOGE("listener cannot open fingerprint listener service exit");
         pthread_mutex_unlock(&qdev->lock);
@@ -671,9 +693,8 @@ static void* listenerFunction(void* data) {
     qdev->listener.state = STATE_IDLE;
     pthread_mutex_unlock(&qdev->lock);
 
-    static const char kListenCmd[] = "listen";
-    size_t kListenCmdSize = sizeof(kListenCmd) - 1U;
-    if (qemu_pipe_frame_send(qdev->qchanfd, kListenCmd, kListenCmdSize) < 0) {
+    const char* cmd = "listen";
+    if (qemud_channel_send(qdev->qchanfd, cmd, strlen(cmd)) < 0) {
         ALOGE("cannot write fingerprint 'listen' to host");
         goto done_quiet;
     }
@@ -728,8 +749,8 @@ static void* listenerFunction(void* data) {
         }
 
         // Shouldn't block since we were just notified of a POLLIN event
-        if ((size = qemu_pipe_frame_recv(qdev->qchanfd, buffer,
-                                         sizeof(buffer) - 1)) > 0) {
+        if ((size = qemud_channel_recv(qdev->qchanfd, buffer,
+                                       sizeof(buffer) - 1)) > 0) {
             buffer[size] = '\0';
             if (sscanf(buffer, "on:%d", &fid) == 1) {
                 if (fid > 0 && fid <= MAX_FID_VALUE) {

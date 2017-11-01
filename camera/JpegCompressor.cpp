@@ -37,23 +37,23 @@ static void* getSymbol(void* dl, const char* signature) {
     return res;
 }
 
-typedef void (*InitFunc)(JpegStub* stub, int* strides);
+typedef void (*InitFunc)(JpegStub* stub);
 typedef void (*CleanupFunc)(JpegStub* stub);
 typedef int (*CompressFunc)(JpegStub* stub, const void* image,
-        int width, int height, int quality);
+        int width, int height, int quality, ExifData* exifData);
 typedef void (*GetCompressedImageFunc)(JpegStub* stub, void* buff);
 typedef size_t (*GetCompressedSizeFunc)(JpegStub* stub);
 
 NV21JpegCompressor::NV21JpegCompressor()
 {
-    const char dlName[] = "/system/lib/hw/camera.goldfish.jpeg.so";
+    const char dlName[] = "/vendor/lib/hw/camera.goldfish.jpeg.so";
     if (mDl == NULL) {
         mDl = dlopen(dlName, RTLD_NOW);
     }
     assert(mDl != NULL);
 
     InitFunc f = (InitFunc)getSymbol(mDl, "JpegStub_init");
-    (*f)(&mStub, mStrides);
+    (*f)(&mStub);
 }
 
 NV21JpegCompressor::~NV21JpegCompressor()
@@ -69,12 +69,11 @@ NV21JpegCompressor::~NV21JpegCompressor()
 status_t NV21JpegCompressor::compressRawImage(const void* image,
                                               int width,
                                               int height,
-                                              int quality)
+                                              int quality,
+                                              ExifData* exifData)
 {
-    mStrides[0] = width;
-    mStrides[1] = width;
     CompressFunc f = (CompressFunc)getSymbol(mDl, "JpegStub_compress");
-    return (status_t)(*f)(&mStub, image, width, height, quality);
+    return (status_t)(*f)(&mStub, image, width, height, quality, exifData);
 }
 
 
