@@ -16,8 +16,10 @@ LOCAL_PATH := $(call my-dir)
 
 include $(CLEAR_VARS)
 
+LOCAL_VENDOR_MODULE := true
 LOCAL_MODULE := fingerprint.goldfish
 LOCAL_MODULE_RELATIVE_PATH := hw
+LOCAL_C_INCLUDES += $(LOCAL_PATH)/../include
 LOCAL_SRC_FILES := fingerprint.c
 LOCAL_SHARED_LIBRARIES := liblog
 
@@ -25,8 +27,10 @@ include $(BUILD_SHARED_LIBRARY)
 
 include $(CLEAR_VARS)
 
+LOCAL_VENDOR_MODULE := true
 LOCAL_MODULE := fingerprint.ranchu
 LOCAL_MODULE_RELATIVE_PATH := hw
+LOCAL_C_INCLUDES += $(LOCAL_PATH)/../include
 LOCAL_SRC_FILES := fingerprint.c
 LOCAL_SHARED_LIBRARIES := liblog
 

@@ -24,9 +24,11 @@ LOCAL_PATH := $(call my-dir)
 # hw/<GPS_HARDWARE_MODULE_ID>.<ro.hardware>.so
 include $(CLEAR_VARS)
 
+LOCAL_VENDOR_MODULE := true
 LOCAL_MODULE_RELATIVE_PATH := hw
 LOCAL_CFLAGS += -DQEMU_HARDWARE
 LOCAL_SHARED_LIBRARIES := liblog libcutils libhardware
+LOCAL_C_INCLUDES += $(LOCAL_PATH)/../include
 LOCAL_SRC_FILES := gps_qemu.c
 ifeq ($(TARGET_PRODUCT),vbox_x86)
 LOCAL_MODULE := gps.vbox_x86
@@ -38,9 +40,11 @@ include $(BUILD_SHARED_LIBRARY)
 
 include $(CLEAR_VARS)
 
+LOCAL_VENDOR_MODULE := true
 LOCAL_MODULE_RELATIVE_PATH := hw
 LOCAL_CFLAGS += -DQEMU_HARDWARE
 LOCAL_SHARED_LIBRARIES := liblog libcutils libhardware
+LOCAL_C_INCLUDES += $(LOCAL_PATH)/../include
 LOCAL_SRC_FILES := gps_qemu.c
 LOCAL_MODULE := gps.ranchu
 

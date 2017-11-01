@@ -34,8 +34,8 @@
 #endif
 
 #include <cutils/properties.h>
-#include <system/qemu_pipe.h>
 #include <unistd.h>
+#include "qemud.h"
 
 /* Name of the qemud service we want to connect to.
  */
@@ -52,7 +52,7 @@ int  main(void)
         int  tries = MAX_TRIES;
 
         while (1) {
-            qemud_fd = qemu_pipe_open( "pipe:qemud:boot-properties" );
+            qemud_fd = qemud_channel_open( "boot-properties" );
             if (qemud_fd >= 0)
                 break;
 
@@ -69,7 +69,7 @@ int  main(void)
     DD("connected to '%s' qemud service.", QEMUD_SERVICE);
 
     /* send the 'list' command to the service */
-    if (qemu_pipe_frame_send(qemud_fd, "list", 4) < 0) {
+    if (qemud_channel_send(qemud_fd, "list", -1) < 0) {
         DD("could not send command to '%s' service", QEMUD_SERVICE);
         return 1;
     }
@@ -83,7 +83,7 @@ int  main(void)
         DD("receiving..");
         char* q;
         char  temp[BUFF_SIZE];
-        int   len = qemu_pipe_frame_recv(qemud_fd, temp, sizeof temp - 1);
+        int   len = qemud_channel_recv(qemud_fd, temp, sizeof temp - 1);
 
         /* lone NUL-byte signals end of properties */
         if (len < 0 || len > BUFF_SIZE-1 || temp[0] == '\0')
@@ -108,6 +108,20 @@ int  main(void)
         }
     }
 
+
+    /* HACK start adbd periodically every minute, if adbd is already running, this is a no-op */
+    for(;;) {
+        usleep(60000000);
+        char  temp[BUFF_SIZE];
+        property_get("sys.boot_completed", temp, "");
+        int is_boot_completed = (strncmp(temp, "1", 1) == 0) ? 1 : 0;
+        if (is_boot_completed) {
+            DD("start adbd ...");
+            property_set("qemu.adbd", "start");
+        } else {
+            DD("skip starting adbd ...");
+        }
+    }
 
     /* finally, close the channel and exit */
     close(qemud_fd);

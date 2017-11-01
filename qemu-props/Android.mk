@@ -22,7 +22,9 @@ LOCAL_PATH := $(call my-dir)
 # to setup various system properties sent by the emulator program.
 #
 include $(CLEAR_VARS)
+LOCAL_VENDOR_MODULE    := true
 LOCAL_MODULE    := qemu-props
+LOCAL_C_INCLUDES += $(LOCAL_PATH)/../include
 LOCAL_SRC_FILES := qemu-props.c
 LOCAL_SHARED_LIBRARIES := libcutils liblog
 include $(BUILD_EXECUTABLE)

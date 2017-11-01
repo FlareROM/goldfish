@@ -17,6 +17,7 @@ LOCAL_PATH := $(call my-dir)
 
 include $(CLEAR_VARS)
 
+LOCAL_VENDOR_MODULE := true
 LOCAL_MODULE := audio.primary.goldfish
 LOCAL_MODULE_RELATIVE_PATH := hw
 LOCAL_MODULE_TAGS := optional
@@ -25,7 +26,31 @@ LOCAL_SHARED_LIBRARIES := libcutils liblog
 
 LOCAL_SRC_FILES := audio_hw.c
 
-LOCAL_SHARED_LIBRARIES += libdl
+LOCAL_C_INCLUDES += \
+			external/tinyalsa/include \
+
+LOCAL_SHARED_LIBRARIES += \
+			libdl \
+			libtinyalsa
+
+LOCAL_CFLAGS := -Wno-unused-parameter
+
+include $(BUILD_SHARED_LIBRARY)
+
+include $(CLEAR_VARS)
+
+LOCAL_VENDOR_MODULE := true
+LOCAL_MODULE := audio.primary.goldfish_legacy
+LOCAL_MODULE_RELATIVE_PATH := hw
+LOCAL_MODULE_TAGS := optional
+
+LOCAL_SHARED_LIBRARIES := libcutils liblog
+
+LOCAL_SRC_FILES := audio_hw_legacy.c
+
+LOCAL_SHARED_LIBRARIES += \
+			libdl
+
 LOCAL_CFLAGS := -Wno-unused-parameter
 
 include $(BUILD_SHARED_LIBRARY)

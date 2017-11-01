@@ -22,16 +22,14 @@
 #define LOG_NDEBUG 0
 #define LOG_TAG "EmulatedCamera_Preview"
 #include <cutils/log.h>
-#include <ui/Rect.h>
-#include <ui/GraphicBufferMapper.h>
 #include "EmulatedCameraDevice.h"
 #include "PreviewWindow.h"
+#include "GrallocModule.h"
 
 namespace android {
 
 PreviewWindow::PreviewWindow()
     : mPreviewWindow(NULL),
-      mLastPreviewed(0),
       mPreviewFrameWidth(0),
       mPreviewFrameHeight(0),
       mPreviewEnabled(false)
@@ -56,18 +54,13 @@ status_t PreviewWindow::setPreviewWindow(struct preview_stream_ops* window,
 
     /* Reset preview info. */
     mPreviewFrameWidth = mPreviewFrameHeight = 0;
-    mPreviewAfter = 0;
-    mLastPreviewed = 0;
 
     if (window != NULL) {
         /* The CPU will write each frame to the preview window buffer.
          * Note that we delay setting preview window buffer geometry until
          * frames start to come in. */
         res = window->set_usage(window, GRALLOC_USAGE_SW_WRITE_OFTEN);
-        if (res == NO_ERROR) {
-            /* Set preview frequency. */
-            mPreviewAfter = 1000000 / preview_fps;
-        } else {
+        if (res != NO_ERROR) {
             window = NULL;
             res = -res; // set_usage returns a negative errno.
             ALOGE("%s: Error setting preview window usage %d -> %s",
@@ -101,14 +94,13 @@ void PreviewWindow::stopPreview()
  * Public API
  ***************************************************************************/
 
-void PreviewWindow::onNextFrameAvailable(const void* frame,
-                                         nsecs_t timestamp,
+void PreviewWindow::onNextFrameAvailable(nsecs_t timestamp,
                                          EmulatedCameraDevice* camera_dev)
 {
     int res;
     Mutex::Autolock locker(&mObjectLock);
 
-    if (!isPreviewEnabled() || mPreviewWindow == NULL || !isPreviewTime()) {
+    if (!isPreviewEnabled() || mPreviewWindow == NULL) {
         return;
     }
 
@@ -157,11 +149,11 @@ void PreviewWindow::onNextFrameAvailable(const void* frame,
     /* Now let the graphics framework to lock the buffer, and provide
      * us with the framebuffer data address. */
     void* img = NULL;
-    const Rect rect(mPreviewFrameWidth, mPreviewFrameHeight);
-    GraphicBufferMapper& grbuffer_mapper(GraphicBufferMapper::get());
-    res = grbuffer_mapper.lock(*buffer, GRALLOC_USAGE_SW_WRITE_OFTEN, rect, &img);
+    res = GrallocModule::getInstance().lock(
+        *buffer, GRALLOC_USAGE_SW_WRITE_OFTEN,
+        0, 0, mPreviewFrameWidth, mPreviewFrameHeight, &img);
     if (res != NO_ERROR) {
-        ALOGE("%s: grbuffer_mapper.lock failure: %d -> %s",
+        ALOGE("%s: gralloc.lock failure: %d -> %s",
              __FUNCTION__, res, strerror(res));
         mPreviewWindow->cancel_buffer(mPreviewWindow, buffer);
         return;
@@ -178,7 +170,7 @@ void PreviewWindow::onNextFrameAvailable(const void* frame,
         ALOGE("%s: Unable to obtain preview frame: %d", __FUNCTION__, res);
         mPreviewWindow->cancel_buffer(mPreviewWindow, buffer);
     }
-    grbuffer_mapper.unlock(*buffer);
+    GrallocModule::getInstance().unlock(*buffer);
 }
 
 /***************************************************************************
@@ -199,18 +191,6 @@ bool PreviewWindow::adjustPreviewDimensions(EmulatedCameraDevice* camera_dev)
     mPreviewFrameHeight = camera_dev->getFrameHeight();
 
     return true;
-}
-
-bool PreviewWindow::isPreviewTime()
-{
-    timeval cur_time;
-    gettimeofday(&cur_time, NULL);
-    const uint64_t cur_mks = cur_time.tv_sec * 1000000LL + cur_time.tv_usec;
-    if ((cur_mks - mLastPreviewed) >= mPreviewAfter) {
-        mLastPreviewed = cur_mks;
-        return true;
-    }
-    return false;
 }
 
 }; /* namespace android */
