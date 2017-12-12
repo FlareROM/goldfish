@@ -1,5 +1,4 @@
-#
-# Copyright (C) 2015 The Android Open Source Project
+# Copyright (C) 2008 The Android Open Source Project
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,34 +11,29 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#
+
 
 LOCAL_PATH := $(call my-dir)
 
+# HAL module implemenation stored in
+# hw/<OVERLAY_HARDWARE_MODULE_ID>.<ro.product.board>.so
 include $(CLEAR_VARS)
-LOCAL_VENDOR_MODULE := true
-LOCAL_MODULE := gatekeeper.ranchu
+
 LOCAL_MODULE_RELATIVE_PATH := hw
+LOCAL_PROPRIETARY_MODULE := true
+LOCAL_SHARED_LIBRARIES := liblog libcutils
 
-LOCAL_CFLAGS := -Wall -Wextra -Werror -Wunused
-LOCAL_SRC_FILES := \
-	module.cpp \
-	SoftGateKeeperDevice.cpp
+LOCAL_SRC_FILES := 	\
+	gralloc.cpp 	\
+	framebuffer.cpp \
+	mapper.cpp
 
+LOCAL_HEADER_LIBRARIES := libhardware_headers
 
-LOCAL_SHARED_LIBRARIES := \
-	libbinder \
-	libgatekeeper \
-	liblog \
-	libhardware \
-	libbase \
-	libutils \
-	libcrypto \
-	libhidlbase \
-	libhidltransport \
-	libhwbinder \
-	android.hardware.gatekeeper@1.0 \
+LOCAL_MODULE := gralloc.goldfish.default
+LOCAL_CFLAGS:= -DLOG_TAG=\"gralloc\" -Wno-missing-field-initializers
+ifeq ($(TARGET_USE_PAN_DISPLAY),true)
+LOCAL_CFLAGS += -DUSE_PAN_DISPLAY=1
+endif
 
-LOCAL_STATIC_LIBRARIES := libscrypt_static
-LOCAL_C_INCLUDES := external/scrypt/lib/crypto
 include $(BUILD_SHARED_LIBRARY)
